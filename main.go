@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -69,14 +68,13 @@ func runCommand(name, command string, args []string) error {
 	return cmd.Run()
 }
 
-func getCommand(command string, cm []Command) (string, string, error) {
+func getCommand(command string, cm []Command) (*Command, error) {
 	for i := range cm {
 		if cm[i].Name == command {
-			return cm[i].Name, cm[i].Command, nil
-			``
+			return &cm[i], nil
 		}
 	}
-	return "", "", fmt.Errorf("Command %s not found", command)
+	return nil, fmt.Errorf("Command %s not found", command)
 }
 
 func loadFile(fileName string) (io.ReadCloser, error) {
@@ -93,52 +91,97 @@ func main() {
 	app := &cli.App{
 		Name:  "rundo",
 		Usage: "Local scripts runner",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "file",
-				Aliases: []string{"f"},
-				Usage:   "Filename to use for commands",
-			},
-			&cli.BoolFlag{
-				Name:  "dry-run",
-				Usage: "Dry run the command",
-			},
-		},
-		Action: func(c *cli.Context) error {
-			// read commands
-			fileName := "./" + defaultFileName
-			if c.IsSet("file") {
-				fileName = c.String("file")
-			}
-			f, err := loadFile(fileName)
-			if err != nil {
-				return err
-			}
+		Commands: []*cli.Command{
+			{
+				Name:    "list",
+				Aliases: []string{"ls"},
+				Usage:   "Shows list of the defined commands in the current context",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Usage: "Dry run the command",
+					},
+					&cli.StringFlag{
+						Name:    "file",
+						Aliases: []string{"f"},
+						Usage:   "Filename to use for commands",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					fileName := "./" + defaultFileName
+					if c.IsSet("file") {
+						fileName = c.String("file")
+					}
+					f, err := loadFile(fileName)
+					if err != nil {
+						return err
+					}
 
-			cm, _ := readCommands(f)
-			if c.NArg() == 0 {
-				return printCommands(cm)
-			}
-			name, command, err := getCommand(c.Args().First(), cm)
-			if err != nil {
-				return err
-			}
-			commandList := strings.Fields(command)
-			command = commandList[0]
-			args := append(commandList[1:], c.Args().Tail()...)
-			if c.IsSet("dry-run") {
-				argsString := strings.Join(args, " ")
-				fmt.Printf("# running alias `%s`: command: `%s` with arguments: `%s`\n", name, command, argsString)
-				fmt.Printf("$ %s %s\n", command, argsString)
-				return nil
-			}
-			return runCommand(name, command, args)
+					cm, err := readCommands(f)
+					if err != nil {
+						return err
+					}
+
+					return printCommands(cm)
+				},
+			},
+			{
+				Name:      "run",
+				Usage:     "Runs one of the commands",
+				ArgsUsage: "[NAME] [ARGS]...",
+				Aliases:   []string{"r"},
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "dry-run",
+						Usage: "Dry run the command",
+					},
+					&cli.StringFlag{
+						Name:    "file",
+						Aliases: []string{"f"},
+						Usage:   "Filename to use for commands",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					// read commands
+					fileName := "./" + defaultFileName
+					if c.IsSet("file") {
+						fileName = c.String("file")
+					}
+					f, err := loadFile(fileName)
+					if err != nil {
+						return err
+					}
+
+					cm, err := readCommands(f)
+					if err != nil {
+						return err
+					}
+
+					if c.NArg() == 0 {
+						return printCommands(cm)
+					}
+					comm, err := getCommand(c.Args().First(), cm)
+					if err != nil {
+						return err
+					}
+					commandList := strings.Fields(comm.Command)
+					command := commandList[0]
+					args := append(commandList[1:], c.Args().Tail()...)
+					if c.IsSet("dry-run") {
+						argsString := strings.Join(args, " ")
+						fmt.Printf("# running alias `%s`: command: `%s` with arguments: `%s`\n", comm.Name, command, argsString)
+						fmt.Printf("$ %s %s\n", command, argsString)
+						return nil
+					}
+					return runCommand(comm.Name, command, args)
+				},
+			},
 		},
 	}
 
 	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("Error: %s", err.Error())
+		os.Exit(1)
 	}
-
 }
