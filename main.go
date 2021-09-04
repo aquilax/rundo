@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/mattn/go-shellwords"
 	"github.com/urfave/cli/v2"
 )
 
@@ -164,9 +165,11 @@ func main() {
 					if err != nil {
 						return err
 					}
-					commandList := strings.Fields(comm.Command)
-					command := commandList[0]
-					args := append(commandList[1:], c.Args().Tail()...)
+					command, commandArgs, err := getCommandArgs(comm.Command)
+					if err != nil {
+						return err
+					}
+					args := append(commandArgs, c.Args().Tail()...)
 					if c.IsSet("dry-run") {
 						argsString := strings.Join(args, " ")
 						fmt.Printf("# running alias `%s`: command: `%s` with arguments: `%s`\n", comm.Name, command, argsString)
@@ -184,4 +187,9 @@ func main() {
 		fmt.Printf("Error: %s", err.Error())
 		os.Exit(1)
 	}
+}
+
+func getCommandArgs(command string) (string, []string, error) {
+	commandList, err := shellwords.Parse(command)
+	return commandList[0], commandList[1:], err
 }
